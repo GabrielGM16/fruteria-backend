@@ -2,10 +2,15 @@ const express = require('express');
 const router = express.Router();
 const productosController = require('../controllers/productosController');
 
-router.get('/', productosController.getAll);
-router.get('/:id', productosController.getById);
-router.post('/', productosController.create);
-router.put('/:id', productosController.update);
-router.delete('/:id', productosController.delete);
+// Rutas CRUD básicas
+router.get('/', productosController.getProductos);
+router.get('/:id', productosController.getProductoById);
+router.post('/', productosController.createProducto);
+router.put('/:id', productosController.updateProducto);
+router.delete('/:id', productosController.deleteProducto);
+
+// Rutas específicas para inventario
+router.put('/:id/stock', productosController.updateStock);
+router.get('/inventario/alertas', productosController.getAlertas);
 
 module.exports = router;
