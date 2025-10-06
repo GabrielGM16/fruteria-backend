@@ -377,6 +377,550 @@ class UsersController {
       });
     }
   }
+
+  // ===== MÉTODOS ESPECÍFICOS PARA ADMIN DE USUARIOS =====
+
+  // Obtener todos los usuarios con paginación y filtros para admin
+  async getAllUsersAdmin(req, res) {
+    try {
+      const { 
+        page = 1, 
+        limit = 25, 
+        search = '', 
+        rol_id = '', 
+        activo = '' 
+      } = req.query;
+
+      const offset = (page - 1) * limit;
+      let whereConditions = [];
+      let queryParams = [];
+
+      // Construir condiciones WHERE dinámicamente
+      if (search) {
+        whereConditions.push('(u.username LIKE ? OR u.nombre LIKE ? OR u.email LIKE ?)');
+        const searchTerm = `%${search}%`;
+        queryParams.push(searchTerm, searchTerm, searchTerm);
+      }
+
+      if (rol_id) {
+        whereConditions.push('u.rol_id = ?');
+        queryParams.push(rol_id);
+      }
+
+      if (activo !== '') {
+        whereConditions.push('u.activo = ?');
+        queryParams.push(activo === 'true' ? 1 : 0);
+      }
+
+      const whereClause = whereConditions.length > 0 
+        ? `WHERE ${whereConditions.join(' AND ')}`
+        : '';
+
+      // Query para obtener usuarios con paginación
+      const usersQuery = `
+        SELECT u.id, u.username, u.nombre, u.email, u.activo, u.ultimo_login,
+               u.created_at, u.updated_at,
+               r.id as rol_id, r.nombre as rol_nombre, r.descripcion as rol_descripcion
+        FROM usuarios u
+        INNER JOIN roles r ON u.rol_id = r.id
+        ${whereClause}
+        ORDER BY u.created_at DESC
+        LIMIT ? OFFSET ?
+      `;
+
+      // Query para contar total de usuarios
+      const countQuery = `
+        SELECT COUNT(*) as total
+        FROM usuarios u
+        INNER JOIN roles r ON u.rol_id = r.id
+        ${whereClause}
+      `;
+
+      const [users] = await db.execute(usersQuery, [...queryParams, parseInt(limit), offset]);
+      const [countResult] = await db.execute(countQuery, queryParams);
+
+      const total = countResult[0].total;
+      const totalPages = Math.ceil(total / limit);
+
+      res.json({
+        success: true,
+        data: users,
+        pagination: {
+          total,
+          pages: totalPages,
+          current: parseInt(page),
+          limit: parseInt(limit)
+        }
+      });
+
+    } catch (error) {
+      console.error('Error obteniendo usuarios para admin:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor'
+      });
+    }
+  }
+
+  // Obtener estadísticas de usuarios para dashboard admin
+  async getUserStats(req, res) {
+    try {
+      const statsQuery = `
+        SELECT 
+          COUNT(*) as total_usuarios,
+          SUM(CASE WHEN activo = 1 THEN 1 ELSE 0 END) as usuarios_activos,
+          SUM(CASE WHEN activo = 0 THEN 1 ELSE 0 END) as usuarios_inactivos,
+          COUNT(DISTINCT rol_id) as total_roles
+        FROM usuarios
+      `;
+
+      const roleStatsQuery = `
+        SELECT r.nombre as rol, COUNT(u.id) as cantidad
+        FROM roles r
+        LEFT JOIN usuarios u ON r.id = u.rol_id
+        WHERE r.activo = 1
+        GROUP BY r.id, r.nombre
+        ORDER BY cantidad DESC
+      `;
+
+      const [statsResult] = await db.execute(statsQuery);
+      const [roleStats] = await db.execute(roleStatsQuery);
+
+      res.json({
+        success: true,
+        data: {
+          general: statsResult[0],
+          por_rol: roleStats
+        }
+      });
+
+    } catch (error) {
+      console.error('Error obteniendo estadísticas de usuarios:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor'
+      });
+    }
+  }
+
+  // Crear usuario específicamente para admin
+  async createUserAdmin(req, res) {
+    try {
+      const { username, password, nombre, email, rol_id, activo = true } = req.body;
+
+      // Validaciones más estrictas para admin
+      if (!username || !password || !nombre || !rol_id) {
+        return res.status(400).json({
+          success: false,
+          message: 'Username, password, nombre y rol son requeridos'
+        });
+      }
+
+      // Validar formato de username
+      if (!/^[a-zA-Z0-9_]{3,50}$/.test(username)) {
+        return res.status(400).json({
+          success: false,
+          message: 'El username debe tener entre 3-50 caracteres alfanuméricos'
+        });
+      }
+
+      // Validar fortaleza de contraseña
+      if (password.length < 8) {
+        return res.status(400).json({
+          success: false,
+          message: 'La contraseña debe tener al menos 8 caracteres'
+        });
+      }
+
+      // Validar email si se proporciona
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Formato de email inválido'
+        });
+      }
+
+      // Verificar que el username no exista
+      const [existingUsers] = await db.execute(
+        'SELECT id FROM usuarios WHERE username = ?',
+        [username]
+      );
+
+      if (existingUsers.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'El username ya existe'
+        });
+      }
+
+      // Verificar que el email no exista (si se proporciona)
+      if (email) {
+        const [existingEmails] = await db.execute(
+          'SELECT id FROM usuarios WHERE email = ?',
+          [email]
+        );
+
+        if (existingEmails.length > 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'El email ya está registrado'
+          });
+        }
+      }
+
+      // Verificar que el rol exista y esté activo
+      const [roles] = await db.execute(
+        'SELECT id, nombre FROM roles WHERE id = ? AND activo = true',
+        [rol_id]
+      );
+
+      if (roles.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Rol inválido o inactivo'
+        });
+      }
+
+      // Encriptar password con salt más fuerte
+      const saltRounds = 12;
+      const passwordHash = await bcrypt.hash(password, saltRounds);
+
+      // Insertar usuario
+      const insertQuery = `
+        INSERT INTO usuarios (username, password_hash, nombre, email, rol_id, activo)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `;
+
+      const [result] = await db.execute(insertQuery, [
+        username,
+        passwordHash,
+        nombre,
+        email || null,
+        rol_id,
+        activo
+      ]);
+
+      // Obtener el usuario creado con información completa
+      const [newUser] = await db.execute(`
+        SELECT u.id, u.username, u.nombre, u.email, u.activo, u.created_at,
+               r.id as rol_id, r.nombre as rol_nombre, r.descripcion as rol_descripcion
+        FROM usuarios u
+        INNER JOIN roles r ON u.rol_id = r.id
+        WHERE u.id = ?
+      `, [result.insertId]);
+
+      res.status(201).json({
+        success: true,
+        message: 'Usuario creado exitosamente',
+        data: newUser[0]
+      });
+
+    } catch (error) {
+      console.error('Error creando usuario (admin):', error);
+      
+      if (error.code === 'ER_DUP_ENTRY') {
+        return res.status(400).json({
+          success: false,
+          message: 'El username o email ya existe'
+        });
+      }
+
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor'
+      });
+    }
+  }
+
+  // Actualizar usuario específicamente para admin
+  async updateUserAdmin(req, res) {
+    try {
+      const { id } = req.params;
+      const { username, nombre, email, rol_id, activo, password } = req.body;
+
+      // Verificar que el usuario exista
+      const [existingUsers] = await db.execute(
+        'SELECT id, username FROM usuarios WHERE id = ?',
+        [id]
+      );
+
+      if (existingUsers.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Usuario no encontrado'
+        });
+      }
+
+      // Prevenir modificación del usuario admin principal
+      if (existingUsers[0].username === 'admin' && req.user.id !== parseInt(id)) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se puede modificar el usuario administrador principal'
+        });
+      }
+
+      // Construir query de actualización dinámicamente
+      const updates = [];
+      const values = [];
+
+      if (username !== undefined) {
+        // Validar formato de username
+        if (!/^[a-zA-Z0-9_]{3,50}$/.test(username)) {
+          return res.status(400).json({
+            success: false,
+            message: 'El username debe tener entre 3-50 caracteres alfanuméricos'
+          });
+        }
+
+        // Verificar que el username no exista en otro usuario
+        const [duplicateUsers] = await db.execute(
+          'SELECT id FROM usuarios WHERE username = ? AND id != ?',
+          [username, id]
+        );
+
+        if (duplicateUsers.length > 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'El username ya existe'
+          });
+        }
+
+        updates.push('username = ?');
+        values.push(username);
+      }
+
+      if (nombre !== undefined) {
+        if (!nombre.trim()) {
+          return res.status(400).json({
+            success: false,
+            message: 'El nombre no puede estar vacío'
+          });
+        }
+        updates.push('nombre = ?');
+        values.push(nombre.trim());
+      }
+
+      if (email !== undefined) {
+        if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Formato de email inválido'
+          });
+        }
+
+        // Verificar que el email no exista en otro usuario
+        if (email) {
+          const [duplicateEmails] = await db.execute(
+            'SELECT id FROM usuarios WHERE email = ? AND id != ?',
+            [email, id]
+          );
+
+          if (duplicateEmails.length > 0) {
+            return res.status(400).json({
+              success: false,
+              message: 'El email ya está registrado'
+            });
+          }
+        }
+
+        updates.push('email = ?');
+        values.push(email || null);
+      }
+
+      if (rol_id !== undefined) {
+        // Verificar que el rol exista y esté activo
+        const [roles] = await db.execute(
+          'SELECT id FROM roles WHERE id = ? AND activo = true',
+          [rol_id]
+        );
+
+        if (roles.length === 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'Rol inválido o inactivo'
+          });
+        }
+
+        updates.push('rol_id = ?');
+        values.push(rol_id);
+      }
+
+      if (activo !== undefined) {
+        // Prevenir desactivación del usuario admin principal
+        if (existingUsers[0].username === 'admin' && !activo) {
+          return res.status(400).json({
+            success: false,
+            message: 'No se puede desactivar el usuario administrador principal'
+          });
+        }
+
+        updates.push('activo = ?');
+        values.push(activo);
+      }
+
+      // Manejar cambio de contraseña
+      if (password !== undefined && password.trim()) {
+        if (password.length < 8) {
+          return res.status(400).json({
+            success: false,
+            message: 'La nueva contraseña debe tener al menos 8 caracteres'
+          });
+        }
+
+        const saltRounds = 12;
+        const passwordHash = await bcrypt.hash(password, saltRounds);
+        updates.push('password_hash = ?');
+        values.push(passwordHash);
+      }
+
+      if (updates.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'No hay datos para actualizar'
+        });
+      }
+
+      updates.push('updated_at = NOW()');
+      values.push(id);
+
+      const updateQuery = `UPDATE usuarios SET ${updates.join(', ')} WHERE id = ?`;
+      await db.execute(updateQuery, values);
+
+      // Obtener el usuario actualizado con información completa
+      const [updatedUser] = await db.execute(`
+        SELECT u.id, u.username, u.nombre, u.email, u.activo, u.updated_at,
+               r.id as rol_id, r.nombre as rol_nombre, r.descripcion as rol_descripcion
+        FROM usuarios u
+        INNER JOIN roles r ON u.rol_id = r.id
+        WHERE u.id = ?
+      `, [id]);
+
+      res.json({
+        success: true,
+        message: 'Usuario actualizado exitosamente',
+        data: updatedUser[0]
+      });
+
+    } catch (error) {
+      console.error('Error actualizando usuario (admin):', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor'
+      });
+    }
+  }
+
+  // Eliminar usuario específicamente para admin
+  async deleteUserAdmin(req, res) {
+    try {
+      const { id } = req.params;
+
+      // Verificar que el usuario exista
+      const [existingUsers] = await db.execute(
+        'SELECT id, username FROM usuarios WHERE id = ?',
+        [id]
+      );
+
+      if (existingUsers.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Usuario no encontrado'
+        });
+      }
+
+      // Prevenir eliminación del usuario admin principal
+      if (existingUsers[0].username === 'admin') {
+        return res.status(400).json({
+          success: false,
+          message: 'No se puede eliminar el usuario administrador principal'
+        });
+      }
+
+      // Prevenir auto-eliminación
+      if (parseInt(id) === req.user.id) {
+        return res.status(400).json({
+          success: false,
+          message: 'No puedes eliminar tu propio usuario'
+        });
+      }
+
+      // Soft delete - marcar como inactivo
+      await db.execute(
+        'UPDATE usuarios SET activo = false, updated_at = NOW() WHERE id = ?',
+        [id]
+      );
+
+      res.json({
+        success: true,
+        message: 'Usuario eliminado exitosamente'
+      });
+
+    } catch (error) {
+      console.error('Error eliminando usuario (admin):', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor'
+      });
+    }
+  }
+
+  // Alternar estado activo/inactivo de usuario
+  async toggleUserStatus(req, res) {
+    try {
+      const { id } = req.params;
+
+      // Verificar que el usuario exista
+      const [existingUsers] = await db.execute(
+        'SELECT id, username, activo FROM usuarios WHERE id = ?',
+        [id]
+      );
+
+      if (existingUsers.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: 'Usuario no encontrado'
+        });
+      }
+
+      const user = existingUsers[0];
+
+      // Prevenir desactivación del usuario admin principal
+      if (user.username === 'admin' && user.activo) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se puede desactivar el usuario administrador principal'
+        });
+      }
+
+      // Prevenir auto-desactivación
+      if (parseInt(id) === req.user.id && user.activo) {
+        return res.status(400).json({
+          success: false,
+          message: 'No puedes desactivar tu propio usuario'
+        });
+      }
+
+      const newStatus = !user.activo;
+
+      await db.execute(
+        'UPDATE usuarios SET activo = ?, updated_at = NOW() WHERE id = ?',
+        [newStatus, id]
+      );
+
+      res.json({
+        success: true,
+        message: `Usuario ${newStatus ? 'activado' : 'desactivado'} exitosamente`,
+        data: { activo: newStatus }
+      });
+
+    } catch (error) {
+      console.error('Error alternando estado de usuario:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error interno del servidor'
+      });
+    }
+  }
 }
 
 module.exports = new UsersController();

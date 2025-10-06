@@ -11,14 +11,21 @@ const {
 // Todas las rutas requieren autenticación
 router.use(authenticateToken);
 
-// Obtener roles disponibles (todos los usuarios autenticados pueden ver roles)
-router.get('/roles', usersController.getRoles);
+// Rutas específicas para administradores de usuarios
+router.get('/admin/usuarios', requireAdmin, usersController.getAllUsersAdmin);
+router.get('/admin/usuarios/stats', requireAdmin, usersController.getUserStats);
+router.post('/admin/usuarios', requireAdmin, usersController.createUserAdmin);
+router.put('/admin/usuarios/:id', requireAdmin, usersController.updateUserAdmin);
+router.delete('/admin/usuarios/:id', requireAdmin, usersController.deleteUserAdmin);
+router.patch('/admin/usuarios/:id/toggle-status', requireAdmin, usersController.toggleUserStatus);
 
-// Rutas que requieren permisos de lectura de usuarios
+// Obtener roles disponibles (solo admin puede ver todos los roles)
+router.get('/admin/roles', requireAdmin, usersController.getRoles);
+
+// Rutas existentes para compatibilidad
+router.get('/roles', usersController.getRoles);
 router.get('/', requirePermission('usuarios_lectura'), usersController.getAllUsers);
 router.get('/:id', requirePermission('usuarios_lectura'), usersController.getUserById);
-
-// Rutas que requieren permisos de escritura de usuarios (solo admin)
 router.post('/', requireAdmin, usersController.createUser);
 router.put('/:id', requireAdmin, usersController.updateUser);
 router.delete('/:id', requireAdmin, usersController.deleteUser);
