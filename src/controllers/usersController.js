@@ -383,31 +383,53 @@ class UsersController {
   // Obtener todos los usuarios con paginación y filtros para admin
   async getAllUsersAdmin(req, res) {
     try {
-      const { 
-        page = 1, 
-        limit = 25, 
-        search = '', 
-        rol_id = '', 
-        activo = '' 
-      } = req.query;
+      // Obtener parámetros y asegurar que sean strings
+      const page = String(req.query.page || '1');
+      const limit = String(req.query.limit || '25');
+      const search = String(req.query.search || '');
+      const rol_id = String(req.query.rol_id || '');
+      const activo = String(req.query.activo || '');
 
-      const offset = (page - 1) * limit;
+      // Convertir a enteros y validar
+      let pageNum = Number(page);
+      let limitNum = Number(limit);
+      
+      // Validar que sean números válidos
+      if (!Number.isInteger(pageNum) || pageNum < 1) {
+        pageNum = 1;
+      }
+      
+      if (!Number.isInteger(limitNum) || limitNum < 1) {
+        limitNum = 25;
+      }
+      
+      // Limitar el máximo de registros por página
+      if (limitNum > 100) {
+        limitNum = 100;
+      }
+      
+      // Calcular offset - asegurar que sea un entero
+      const offset = Math.floor((pageNum - 1) * limitNum);
+
       let whereConditions = [];
       let queryParams = [];
 
       // Construir condiciones WHERE dinámicamente
-      if (search) {
+      if (search.trim()) {
         whereConditions.push('(u.username LIKE ? OR u.nombre LIKE ? OR u.email LIKE ?)');
-        const searchTerm = `%${search}%`;
+        const searchTerm = `%${search.trim()}%`;
         queryParams.push(searchTerm, searchTerm, searchTerm);
       }
 
-      if (rol_id) {
-        whereConditions.push('u.rol_id = ?');
-        queryParams.push(rol_id);
+      if (rol_id.trim()) {
+        const rolIdNum = parseInt(rol_id, 10);
+        if (!isNaN(rolIdNum)) {
+          whereConditions.push('u.rol_id = ?');
+          queryParams.push(rolIdNum);
+        }
       }
 
-      if (activo !== '') {
+      if (activo.trim() !== '') {
         whereConditions.push('u.activo = ?');
         queryParams.push(activo === 'true' ? 1 : 0);
       }
@@ -417,6 +439,7 @@ class UsersController {
         : '';
 
       // Query para obtener usuarios con paginación
+      // IMPORTANTE: No usar placeholders para LIMIT/OFFSET, insertarlos directamente
       const usersQuery = `
         SELECT u.id, u.username, u.nombre, u.email, u.activo, u.ultimo_login,
                u.created_at, u.updated_at,
@@ -425,7 +448,7 @@ class UsersController {
         INNER JOIN roles r ON u.rol_id = r.id
         ${whereClause}
         ORDER BY u.created_at DESC
-        LIMIT ? OFFSET ?
+        LIMIT ${limitNum} OFFSET ${offset}
       `;
 
       // Query para contar total de usuarios
@@ -436,11 +459,17 @@ class UsersController {
         ${whereClause}
       `;
 
-      const [users] = await db.execute(usersQuery, [...queryParams, parseInt(limit), offset]);
+      console.log('=== DEBUG QUERY ===');
+      console.log('Page:', pageNum, 'Limit:', limitNum, 'Offset:', offset);
+      console.log('Query params:', queryParams);
+      console.log('SQL Query:', usersQuery);
+      
+      // Ejecutar queries - SOLO con los parámetros del WHERE
+      const [users] = await db.execute(usersQuery, queryParams);
       const [countResult] = await db.execute(countQuery, queryParams);
 
       const total = countResult[0].total;
-      const totalPages = Math.ceil(total / limit);
+      const totalPages = Math.ceil(total / limitNum);
 
       res.json({
         success: true,
@@ -448,8 +477,8 @@ class UsersController {
         pagination: {
           total,
           pages: totalPages,
-          current: parseInt(page),
-          limit: parseInt(limit)
+          current: pageNum,
+          limit: limitNum
         }
       });
 
@@ -457,7 +486,8 @@ class UsersController {
       console.error('Error obteniendo usuarios para admin:', error);
       res.status(500).json({
         success: false,
-        message: 'Error interno del servidor'
+        message: 'Error interno del servidor',
+        error: error.message
       });
     }
   }

@@ -39,13 +39,18 @@ const authenticateToken = async (req, res, next) => {
 
     const user = users[0];
     
+    // Manejar permisos que ya pueden estar parseados por MySQL2
+    const permisos = typeof user.permisos === 'string' 
+      ? JSON.parse(user.permisos) 
+      : user.permisos;
+    
     // Agregar información del usuario a la request
     req.user = {
       id: user.id,
       username: user.username,
       nombre: user.nombre,
       rol: user.rol,
-      permisos: JSON.parse(user.permisos)
+      permisos: permisos
     };
 
     next();
@@ -193,12 +198,18 @@ const optionalAuth = async (req, res, next) => {
 
     if (users.length > 0) {
       const user = users[0];
+      
+      // Manejar permisos que ya pueden estar parseados por MySQL2
+      const permisos = typeof user.permisos === 'string' 
+        ? JSON.parse(user.permisos) 
+        : user.permisos;
+      
       req.user = {
         id: user.id,
         username: user.username,
         nombre: user.nombre,
         rol: user.rol,
-        permisos: JSON.parse(user.permisos)
+        permisos: permisos
       };
     } else {
       req.user = null;
