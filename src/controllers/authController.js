@@ -54,13 +54,18 @@ class AuthController {
         [user.id]
       );
 
+      // ✅ Manejar permisos que ya pueden estar parseados por MySQL2
+      const permisos = typeof user.permisos === 'string' 
+        ? JSON.parse(user.permisos) 
+        : user.permisos;
+
       // Generar JWT token
       const token = jwt.sign(
         {
           id: user.id,
           username: user.username,
           rol: user.rol,
-          permisos: JSON.parse(user.permisos)
+          permisos: permisos
         },
         JWT_SECRET,
         { expiresIn: JWT_EXPIRES_IN }
@@ -77,7 +82,7 @@ class AuthController {
           nombre: user.nombre,
           email: user.email,
           rol: user.rol,
-          permisos: JSON.parse(user.permisos)
+          permisos: permisos
         }
       });
 
@@ -125,6 +130,11 @@ class AuthController {
 
       const user = users[0];
 
+      // ✅ Manejar permisos que ya pueden estar parseados por MySQL2
+      const permisos = typeof user.permisos === 'string' 
+        ? JSON.parse(user.permisos) 
+        : user.permisos;
+
       res.json({
         valid: true,
         user: {
@@ -133,7 +143,7 @@ class AuthController {
           nombre: user.nombre,
           email: user.email,
           rol: user.rol,
-          permisos: JSON.parse(user.permisos)
+          permisos: permisos
         }
       });
 

@@ -6,6 +6,8 @@ require('dotenv').config();
 const { globalErrorHandler, logError, validateJSON, notFound } = require('./src/middleware/errorHandler');
 
 // Importar rutas
+const authRoutes = require('./src/routes/auth.routes');
+const usersRoutes = require('./src/routes/users.routes');
 const productosRoutes = require('./src/routes/productos.routes');
 const entradasRoutes = require('./src/routes/entradas.routes');
 const ventasRoutes = require('./src/routes/ventas.routes');
@@ -13,17 +15,40 @@ const mermasRoutes = require('./src/routes/mermas.routes');
 const estadisticasRoutes = require('./src/routes/estadisticas.routes');
 const pagosRoutes = require('./src/routes/pagos.routes');
 
+// Importar middleware de autenticación
+const { optionalAuth } = require('./src/middleware/auth');
+
 const app = express();
 
+// Configuración de CORS
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://localhost:3001'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 // Middleware básico
-app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Middleware de validación JSON
 app.use(validateJSON);
 
-// Rutas principales
+// Middleware de logging
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
+});
+
+// ⭐ RUTAS PÚBLICAS DE AUTENTICACIÓN (sin protección)
+app.use('/api/auth', authRoutes);
+
+// Middleware de autenticación opcional para otras rutas
+app.use('/api', optionalAuth);
+
+// ⭐ RUTAS PROTEGIDAS
+app.use('/api/users', usersRoutes);
 app.use('/api/productos', productosRoutes);
 app.use('/api/entradas', entradasRoutes);
 app.use('/api/ventas', ventasRoutes);
@@ -44,6 +69,8 @@ app.get('/', (req, res) => {
     status: 'active',
     timestamp: new Date().toISOString(),
     endpoints: {
+      auth: '/api/auth',
+      users: '/api/users',
       productos: '/api/productos',
       entradas: '/api/entradas',
       ventas: '/api/ventas',
@@ -75,5 +102,6 @@ app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
   console.log(`📋 Documentación disponible en http://localhost:${PORT}`);
   console.log(`🏥 Health check en http://localhost:${PORT}/health`);
+  console.log(`🔐 Auth endpoint en http://localhost:${PORT}/api/auth/login`);
   console.log(`🌍 Entorno: ${process.env.NODE_ENV || 'development'}`);
 });
