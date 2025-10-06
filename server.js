@@ -14,6 +14,7 @@ const ventasRoutes = require('./src/routes/ventas.routes');
 const mermasRoutes = require('./src/routes/mermas.routes');
 const estadisticasRoutes = require('./src/routes/estadisticas.routes');
 const pagosRoutes = require('./src/routes/pagos.routes');
+const proveedoresRoutes = require('./src/routes/proveedores.routes');
 
 // Importar middleware de autenticación
 const { optionalAuth } = require('./src/middleware/auth');
@@ -59,7 +60,7 @@ app.use('/api/pagos', pagosRoutes);
 // Rutas adicionales para compatibilidad con frontend
 app.use('/api/inventario/:id/stock', productosRoutes);
 app.use('/api/inventario/alertas', productosRoutes);
-app.use('/api/proveedores', entradasRoutes);
+app.use('/api/proveedores', proveedoresRoutes);
 
 // Ruta raíz
 app.get('/', (req, res) => {

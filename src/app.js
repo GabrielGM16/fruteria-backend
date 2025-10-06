@@ -10,6 +10,7 @@ const entradasRoutes = require('./routes/entradas.routes');
 const mermasRoutes = require('./routes/mermas.routes');
 const estadisticasRoutes = require('./routes/estadisticas.routes');
 const pagosRoutes = require('./routes/pagos.routes');
+const proveedoresRoutes = require('./routes/proveedores.routes');
 
 // Importar nuevas rutas de autenticación
 const authRoutes = require('./routes/auth.routes');
@@ -36,7 +37,21 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Middleware de logging
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  console.log('🔍 Headers:', req.headers);
+  console.log('📦 Body:', req.body);
   next();
+});
+
+// Middleware para validar JSON
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    console.log('❌ JSON PARSE ERROR:', err.message);
+    return res.status(400).json({
+      success: false,
+      message: 'JSON inválido en el cuerpo de la petición'
+    });
+  }
+  next(err);
 });
 
 // Rutas públicas de autenticación
@@ -46,13 +61,45 @@ app.use('/api/auth', authRoutes);
 app.use('/api', optionalAuth);
 
 // Rutas protegidas
-app.use('/api/users', usersRoutes);
-app.use('/api/productos', productosRoutes);
-app.use('/api/ventas', ventasRoutes);
-app.use('/api/entradas', entradasRoutes);
-app.use('/api/mermas', mermasRoutes);
-app.use('/api/estadisticas', estadisticasRoutes);
-app.use('/api/pagos', pagosRoutes);
+app.use('/api/users', (req, res, next) => {
+  console.log('🔍 Routing to /api/users');
+  next();
+}, usersRoutes);
+
+app.use('/api/productos', (req, res, next) => {
+  console.log('🔍 Routing to /api/productos');
+  next();
+}, productosRoutes);
+
+app.use('/api/ventas', (req, res, next) => {
+  console.log('🔍 Routing to /api/ventas');
+  next();
+}, ventasRoutes);
+
+app.use('/api/proveedores', (req, res, next) => {
+  console.log('🔍 Routing to /api/proveedores');
+  next();
+}, proveedoresRoutes);
+
+app.use('/api/entradas', (req, res, next) => {
+  console.log('🔍 Routing to /api/entradas');
+  next();
+}, entradasRoutes);
+
+app.use('/api/mermas', (req, res, next) => {
+  console.log('🔍 Routing to /api/mermas');
+  next();
+}, mermasRoutes);
+
+app.use('/api/estadisticas', (req, res, next) => {
+  console.log('🔍 Routing to /api/estadisticas');
+  next();
+}, estadisticasRoutes);
+
+app.use('/api/pagos', (req, res, next) => {
+  console.log('🔍 Routing to /api/pagos');
+  next();
+}, pagosRoutes);
 
 // Ruta de salud del servidor
 app.get('/api/health', (req, res) => {
@@ -78,6 +125,7 @@ app.get('/', (req, res) => {
       mermas: '/api/mermas',
       estadisticas: '/api/estadisticas',
       pagos: '/api/pagos',
+      proveedores: '/api/proveedores',
       health: '/api/health'
     }
   });

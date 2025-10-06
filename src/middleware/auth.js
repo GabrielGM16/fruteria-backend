@@ -6,10 +6,12 @@ const JWT_SECRET = process.env.JWT_SECRET || 'tu_clave_secreta_muy_segura_2024';
 // Middleware para verificar autenticación
 const authenticateToken = async (req, res, next) => {
   try {
+    console.log(`🔐 AUTH - ${req.method} ${req.path} - Checking authentication`);
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
 
     if (!token) {
+      console.log('❌ AUTH - No token provided');
       return res.status(401).json({
         success: false,
         message: 'Token de acceso requerido'
@@ -18,6 +20,7 @@ const authenticateToken = async (req, res, next) => {
 
     // Verificar token
     const decoded = jwt.verify(token, JWT_SECRET);
+    console.log(`✅ AUTH - Token valid for user: ${decoded.username}`);
 
     // Buscar usuario en la base de datos para verificar que sigue activo
     const query = `
@@ -53,6 +56,7 @@ const authenticateToken = async (req, res, next) => {
       permisos: permisos
     };
 
+    console.log(`✅ AUTH - User authenticated: ${user.username} (${user.rol})`);
     next();
 
   } catch (error) {
